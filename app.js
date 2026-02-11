@@ -12,6 +12,7 @@ const state = {
   isRunning: false,
   hands: null,
   isProcessingFrame: false,
+  isStarting: false,
   balls: [
     { id: 1, x: 0.25, y: 0.3, radius: 26, color: '#35e6c4' },
     { id: 2, x: 0.48, y: 0.65, radius: 20, color: '#75f28f' },
@@ -200,13 +201,16 @@ function explainCameraError(error) {
 }
 
 async function startExperience() {
+  if (state.isStarting || state.isRunning) return;
+
   if (!navigator.mediaDevices?.getUserMedia) {
     setStatus('Ваш браузер не поддерживает getUserMedia. Нужен современный Chrome/Edge/Firefox/Safari.');
     return;
   }
 
-  startButton.disabled = true;
+  state.isStarting = true;
   startButton.textContent = 'Запуск…';
+  setStatus('Запрашиваем доступ к камере…');
 
   try {
     await initHands();
@@ -225,13 +229,15 @@ async function startExperience() {
     await videoElement.play();
 
     state.isRunning = true;
+    state.isStarting = false;
+    startButton.disabled = false;
     startButton.textContent = 'Камера включена';
     setStatus('Камера запущена. Двигайте рукой для взаимодействия.');
     nextFrame();
   } catch (error) {
     console.error(error);
+    state.isStarting = false;
     setStatus(explainCameraError(error));
-    startButton.disabled = false;
     startButton.textContent = 'Включить камеру';
   }
 }
