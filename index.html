@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Интерактив с отслеживанием рук</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <header>
+        <h1>Интерактив с отслеживанием рук</h1>
+        <p>
+          Нажмите кнопку запуска, разрешите доступ к камере и сведите большой +
+          указательный пальцы, чтобы «схватить» ближайший шар.
+        </p>
+      </header>
+
+      <div class="controls">
+        <button id="startButton" type="button">Включить камеру</button>
+      </div>
+
+      <section class="stage-wrapper">
+        <video id="webcam" autoplay playsinline muted></video>
+        <canvas id="output"></canvas>
+        <div id="status" class="status">Нажмите «Включить камеру»</div>
+      </section>
+
+      <div class="legend">
+        <span><i class="dot dot-pinch"></i> Пинч курсор</span>
+        <span><i class="dot dot-ball"></i> Перетаскиваемые шары</span>
+      </div>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
