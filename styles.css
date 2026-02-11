@@ -32,6 +32,30 @@ p {
   line-height: 1.4;
 }
 
+.controls {
+  display: flex;
+}
+
+button {
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: linear-gradient(180deg, #4f8cff, #356de0);
+  color: #f5f8ff;
+  padding: 0.65rem 1rem;
+  border-radius: 0.7rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+button:disabled {
+  opacity: 0.75;
+  cursor: default;
+}
+
 .stage-wrapper {
   position: relative;
   border-radius: 1rem;

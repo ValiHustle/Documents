@@ -2,11 +2,16 @@ const videoElement = document.getElementById('webcam');
 const canvasElement = document.getElementById('output');
 const canvasCtx = canvasElement.getContext('2d');
 const statusElement = document.getElementById('status');
+const startButton = document.getElementById('startButton');
 
 const state = {
   pinch: null,
   pinchDistance: Infinity,
   activeBallId: null,
+  stream: null,
+  isRunning: false,
+  hands: null,
+  isProcessingFrame: false,
   balls: [
     { id: 1, x: 0.25, y: 0.3, radius: 26, color: '#35e6c4' },
     { id: 2, x: 0.48, y: 0.65, radius: 20, color: '#75f28f' },
@@ -104,6 +109,8 @@ function drawPinchCursor() {
 }
 
 function renderFrame(results) {
+  if (!videoElement.videoWidth || !videoElement.videoHeight) return;
+
   canvasElement.width = videoElement.videoWidth;
   canvasElement.height = videoElement.videoHeight;
 
@@ -136,35 +143,101 @@ function renderFrame(results) {
   }
 }
 
-async function main() {
+function nextFrame() {
+  if (!state.isRunning) return;
+
+  requestAnimationFrame(nextFrame);
+
+  if (state.isProcessingFrame || videoElement.readyState < 2 || !state.hands) {
+    return;
+  }
+
+  state.isProcessingFrame = true;
+  state.hands
+    .send({ image: videoElement })
+    .catch((error) => {
+      console.error(error);
+      setStatus('Ошибка обработки видеопотока. Обновите страницу.');
+    })
+    .finally(() => {
+      state.isProcessingFrame = false;
+    });
+}
+
+async function initHands() {
+  if (state.hands) return;
+
   setStatus('Загрузка модели распознавания руки…');
 
-  const hands = new Hands({
+  state.hands = new Hands({
     locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
   });
 
-  hands.setOptions({
+  state.hands.setOptions({
     maxNumHands: 1,
     modelComplexity: 1,
     minDetectionConfidence: 0.7,
     minTrackingConfidence: 0.6
   });
 
-  hands.onResults(renderFrame);
-
-  const camera = new Camera(videoElement, {
-    onFrame: async () => {
-      await hands.send({ image: videoElement });
-    },
-    width: 1280,
-    height: 720
-  });
-
-  await camera.start();
-  setStatus('Камера запущена. Двигайте рукой для взаимодействия.');
+  state.hands.onResults(renderFrame);
 }
 
-main().catch((error) => {
-  console.error(error);
-  setStatus('Ошибка запуска. Проверьте доступ к камере и обновите страницу.');
+function explainCameraError(error) {
+  if (!window.isSecureContext) {
+    return 'Камера работает только в HTTPS или на localhost. Откройте страницу как http://localhost:4173.';
+  }
+
+  if (error?.name === 'NotAllowedError') {
+    return 'Доступ к камере запрещён. Разрешите камеру в браузере и нажмите кнопку снова.';
+  }
+
+  if (error?.name === 'NotFoundError') {
+    return 'Камера не найдена. Подключите устройство камеры и повторите попытку.';
+  }
+
+  return 'Не удалось получить доступ к камере. Проверьте разрешения браузера и обновите страницу.';
+}
+
+async function startExperience() {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    setStatus('Ваш браузер не поддерживает getUserMedia. Нужен современный Chrome/Edge/Firefox/Safari.');
+    return;
+  }
+
+  startButton.disabled = true;
+  startButton.textContent = 'Запуск…';
+
+  try {
+    await initHands();
+
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: 'user',
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
+      },
+      audio: false
+    });
+
+    state.stream = stream;
+    videoElement.srcObject = stream;
+    await videoElement.play();
+
+    state.isRunning = true;
+    startButton.textContent = 'Камера включена';
+    setStatus('Камера запущена. Двигайте рукой для взаимодействия.');
+    nextFrame();
+  } catch (error) {
+    console.error(error);
+    setStatus(explainCameraError(error));
+    startButton.disabled = false;
+    startButton.textContent = 'Включить камеру';
+  }
+}
+
+startButton.addEventListener('click', () => {
+  if (!state.isRunning) {
+    startExperience();
+  }
 });
