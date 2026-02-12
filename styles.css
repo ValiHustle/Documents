@@ -75,7 +75,6 @@ canvas {
 }
 
 video {
-  transform: scaleX(-1);
   object-fit: cover;
   opacity: 0.72;
 }
