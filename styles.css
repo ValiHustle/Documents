@@ -74,12 +74,8 @@ canvas {
   height: 100%;
 }
 
-video,
-canvas {
-  transform: scaleX(-1);
-}
-
 video {
+  transform: scaleX(-1);
   object-fit: cover;
   opacity: 0.72;
 }

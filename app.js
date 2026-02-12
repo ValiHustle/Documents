@@ -7,20 +7,16 @@ const startButton = document.getElementById('startButton');
 const state = {
   pinch: null,
   pinchDistance: Infinity,
-  activeObjectId: null,
+  activeBallId: null,
   stream: null,
   isRunning: false,
   hands: null,
   isProcessingFrame: false,
   isStarting: false,
-  lastFrameTime: performance.now(),
-  trail: [],
-  objects: [
-    { id: 1, type: 'circle', x: 0.2, y: 0.28, size: 22, color: '#35e6c4', vx: 0.06, vy: 0.03 },
-    { id: 2, type: 'square', x: 0.47, y: 0.62, size: 20, color: '#8e9eff', vx: -0.05, vy: 0.04 },
-    { id: 3, type: 'triangle', x: 0.7, y: 0.35, size: 24, color: '#f3a0ff', vx: 0.04, vy: -0.06 },
-    { id: 4, type: 'diamond', x: 0.84, y: 0.58, size: 18, color: '#ffd166', vx: -0.03, vy: -0.05 },
-    { id: 5, type: 'star', x: 0.58, y: 0.18, size: 16, color: '#7aff9a', vx: 0.05, vy: 0.02 }
+  balls: [
+    { id: 1, x: 0.25, y: 0.3, radius: 26, color: '#35e6c4' },
+    { id: 2, x: 0.48, y: 0.65, radius: 20, color: '#75f28f' },
+    { id: 3, x: 0.72, y: 0.4, radius: 24, color: '#f3a0ff' }
   ]
 };
 
@@ -33,7 +29,7 @@ function setStatus(text) {
 
 function toCanvas(point) {
   return {
-    x: point.x * canvasElement.width,
+    x: canvasElement.width - point.x * canvasElement.width,
     y: point.y * canvasElement.height
   };
 }
@@ -42,157 +38,58 @@ function distance(a, b) {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
-function drawPolygon(sides, cx, cy, radius, rotation = 0) {
-  canvasCtx.beginPath();
-  for (let i = 0; i < sides; i += 1) {
-    const angle = (i / sides) * Math.PI * 2 + rotation;
-    const px = cx + Math.cos(angle) * radius;
-    const py = cy + Math.sin(angle) * radius;
-    if (i === 0) {
-      canvasCtx.moveTo(px, py);
-    } else {
-      canvasCtx.lineTo(px, py);
-    }
-  }
-  canvasCtx.closePath();
-}
-
-function drawStar(cx, cy, outerRadius, innerRadius, points = 5, rotation = 0) {
-  canvasCtx.beginPath();
-  for (let i = 0; i < points * 2; i += 1) {
-    const isOuter = i % 2 === 0;
-    const radius = isOuter ? outerRadius : innerRadius;
-    const angle = (i / (points * 2)) * Math.PI * 2 + rotation;
-    const px = cx + Math.cos(angle) * radius;
-    const py = cy + Math.sin(angle) * radius;
-    if (i === 0) {
-      canvasCtx.moveTo(px, py);
-    } else {
-      canvasCtx.lineTo(px, py);
-    }
-  }
-  canvasCtx.closePath();
-}
-
-function drawObject(obj, timeMs) {
-  const x = obj.x * canvasElement.width;
-  const y = obj.y * canvasElement.height;
-  const rotation = timeMs * 0.0014 + obj.id;
-
-  canvasCtx.save();
-  canvasCtx.shadowColor = obj.color;
-  canvasCtx.shadowBlur = state.activeObjectId === obj.id ? 20 : 12;
-  canvasCtx.fillStyle = obj.color;
-
-  if (obj.type === 'circle') {
-    canvasCtx.beginPath();
-    canvasCtx.arc(x, y, obj.size, 0, Math.PI * 2);
-    canvasCtx.fill();
-  } else if (obj.type === 'square') {
-    canvasCtx.translate(x, y);
-    canvasCtx.rotate(rotation);
-    canvasCtx.fillRect(-obj.size, -obj.size, obj.size * 2, obj.size * 2);
-  } else if (obj.type === 'triangle') {
-    drawPolygon(3, x, y, obj.size * 1.15, rotation);
-    canvasCtx.fill();
-  } else if (obj.type === 'diamond') {
-    canvasCtx.translate(x, y);
-    canvasCtx.rotate(rotation);
-    drawPolygon(4, 0, 0, obj.size, Math.PI / 4);
-    canvasCtx.fill();
-  } else {
-    drawStar(x, y, obj.size * 1.1, obj.size * 0.52, 5, rotation);
-    canvasCtx.fill();
-  }
-
-  canvasCtx.restore();
-
-  if (state.activeObjectId === obj.id) {
-    const pulseRadius = obj.size * 1.7 + 5 * Math.sin(timeMs / 140);
-    canvasCtx.beginPath();
-    canvasCtx.arc(x, y, pulseRadius, 0, Math.PI * 2);
-    canvasCtx.strokeStyle = 'rgba(255, 246, 183, 0.8)';
-    canvasCtx.lineWidth = 3;
-    canvasCtx.stroke();
-  }
-}
-
-function updateFloatingObjects(deltaTime) {
-  for (const obj of state.objects) {
-    if (state.activeObjectId === obj.id) continue;
-
-    obj.x += obj.vx * deltaTime;
-    obj.y += obj.vy * deltaTime;
-
-    const marginX = Math.max(0.04, obj.size / canvasElement.width + 0.02);
-    const marginY = Math.max(0.04, obj.size / canvasElement.height + 0.02);
-
-    if (obj.x <= marginX || obj.x >= 1 - marginX) {
-      obj.vx *= -1;
-      obj.x = Math.min(1 - marginX, Math.max(marginX, obj.x));
-    }
-
-    if (obj.y <= marginY || obj.y >= 1 - marginY) {
-      obj.vy *= -1;
-      obj.y = Math.min(1 - marginY, Math.max(marginY, obj.y));
-    }
-  }
-}
-
-function drawTrail() {
-  if (state.trail.length < 2) return;
-
-  for (let i = 1; i < state.trail.length; i += 1) {
-    const prev = state.trail[i - 1];
-    const curr = state.trail[i];
-    const alpha = i / state.trail.length;
+function drawBalls() {
+  for (const ball of state.balls) {
+    const x = ball.x * canvasElement.width;
+    const y = ball.y * canvasElement.height;
 
     canvasCtx.beginPath();
-    canvasCtx.moveTo(prev.x, prev.y);
-    canvasCtx.lineTo(curr.x, curr.y);
-    canvasCtx.lineWidth = 1 + alpha * 4;
-    canvasCtx.strokeStyle = `rgba(255, 215, 120, ${alpha * 0.7})`;
+    canvasCtx.arc(x, y, ball.radius, 0, Math.PI * 2);
+    canvasCtx.fillStyle = ball.color;
+    canvasCtx.fill();
+    canvasCtx.lineWidth = state.activeBallId === ball.id ? 4 : 2;
+    canvasCtx.strokeStyle = state.activeBallId === ball.id ? '#fff6b7' : 'rgba(255,255,255,0.4)';
     canvasCtx.stroke();
   }
 }
 
 function updateInteraction() {
   if (!state.pinch) {
-    state.activeObjectId = null;
+    state.activeBallId = null;
     return;
   }
 
   const pinchCanvas = toCanvas(state.pinch);
 
-  if (state.activeObjectId === null && state.pinchDistance < PINCH_GRAB_THRESHOLD) {
+  if (state.activeBallId === null && state.pinchDistance < PINCH_GRAB_THRESHOLD) {
     let candidate = null;
     let minDistance = Infinity;
 
-    for (const obj of state.objects) {
-      const objPos = { x: obj.x * canvasElement.width, y: obj.y * canvasElement.height };
-      const d = distance(pinchCanvas, objPos);
-      if (d < obj.size * 1.9 && d < minDistance) {
-        candidate = obj;
+    for (const ball of state.balls) {
+      const ballPos = { x: ball.x * canvasElement.width, y: ball.y * canvasElement.height };
+      const d = distance(pinchCanvas, ballPos);
+      if (d < ball.radius * 1.7 && d < minDistance) {
+        candidate = ball;
         minDistance = d;
       }
     }
 
     if (candidate) {
-      state.activeObjectId = candidate.id;
-      setStatus('Захват: фигура двигается за рукой');
+      state.activeBallId = candidate.id;
+      setStatus('Захват: шар двигается за рукой');
     }
   }
 
-  if (state.activeObjectId !== null && state.pinchDistance > PINCH_RELEASE_THRESHOLD) {
-    state.activeObjectId = null;
+  if (state.activeBallId !== null && state.pinchDistance > PINCH_RELEASE_THRESHOLD) {
+    state.activeBallId = null;
     setStatus('Отпущено: сведите пальцы снова для захвата');
   }
 
-  if (state.activeObjectId !== null) {
-    const obj = state.objects.find((item) => item.id === state.activeObjectId);
-    if (obj) {
-      obj.x = Math.min(0.97, Math.max(0.03, state.pinch.x));
-      obj.y = Math.min(0.97, Math.max(0.03, state.pinch.y));
+  if (state.activeBallId !== null) {
+    const ball = state.balls.find((item) => item.id === state.activeBallId);
+    if (ball) {
+      ball.x = Math.min(0.97, Math.max(0.03, 1 - state.pinch.x));
+      ball.y = Math.min(0.97, Math.max(0.03, state.pinch.y));
     }
   }
 }
@@ -204,7 +101,7 @@ function drawPinchCursor() {
   const isPinched = state.pinchDistance < PINCH_GRAB_THRESHOLD;
 
   canvasCtx.beginPath();
-  canvasCtx.arc(x, y, isPinched ? 15 : 11, 0, Math.PI * 2);
+  canvasCtx.arc(x, y, isPinched ? 14 : 10, 0, Math.PI * 2);
   canvasCtx.fillStyle = isPinched ? '#ffd166' : '#ff9f43';
   canvasCtx.fill();
   canvasCtx.lineWidth = 2;
@@ -215,19 +112,11 @@ function drawPinchCursor() {
 function renderFrame(results) {
   if (!videoElement.videoWidth || !videoElement.videoHeight) return;
 
-  const now = performance.now();
-  const deltaTime = Math.min(0.03, (now - state.lastFrameTime) / 1000);
-  state.lastFrameTime = now;
-
   canvasElement.width = videoElement.videoWidth;
   canvasElement.height = videoElement.videoHeight;
 
   canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-
-  updateFloatingObjects(deltaTime);
-  for (const obj of state.objects) {
-    drawObject(obj, now);
-  }
+  drawBalls();
 
   if (results.multiHandLandmarks?.length) {
     const hand = results.multiHandLandmarks[0];
@@ -242,24 +131,16 @@ function renderFrame(results) {
     };
     state.pinchDistance = distance(thumbTip, indexTip);
     updateInteraction();
-
-    const pinchPoint = toCanvas(state.pinch);
-    state.trail.push(pinchPoint);
-    if (state.trail.length > 18) {
-      state.trail.shift();
-    }
   } else {
     state.pinch = null;
-    state.activeObjectId = null;
-    state.trail = [];
+    state.activeBallId = null;
     setStatus('Рука не найдена — покажите ладонь в кадре');
   }
 
-  drawTrail();
   drawPinchCursor();
 
-  if (state.pinch && state.activeObjectId === null) {
-    setStatus('Сведите большой и указательный пальцы рядом с фигурой');
+  if (state.pinch && state.activeBallId === null) {
+    setStatus('Сведите большой и указательный пальцы рядом с шаром');
   }
 }
 
