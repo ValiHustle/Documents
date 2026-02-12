@@ -36,7 +36,7 @@ function setStatus(text) {
 
 function toCanvas(point) {
   return {
-    x: canvasElement.width - point.x * canvasElement.width,
+    x: point.x * canvasElement.width,
     y: point.y * canvasElement.height
   };
 }
@@ -156,7 +156,7 @@ function updateInteraction() {
   if (state.activeBallId !== null) {
     const ball = state.balls.find((item) => item.id === state.activeBallId);
     if (ball) {
-      ball.x = Math.min(0.97, Math.max(0.03, 1 - state.pinch.x));
+      ball.x = Math.min(0.97, Math.max(0.03, state.pinch.x));
       ball.y = Math.min(0.97, Math.max(0.03, state.pinch.y));
     }
   }
