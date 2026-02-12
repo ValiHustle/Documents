@@ -3,6 +3,8 @@ const canvasElement = document.getElementById('output');
 const canvasCtx = canvasElement.getContext('2d');
 const statusElement = document.getElementById('status');
 const startButton = document.getElementById('startButton');
+const resetButton = document.getElementById('resetButton');
+const scoreElement = document.getElementById('score');
 
 const state = {
   pinch: null,
@@ -13,10 +15,15 @@ const state = {
   hands: null,
   isProcessingFrame: false,
   isStarting: false,
+  score: 0,
+  zones: [
+    { id: 'left', x: 0.14, y: 0.82, width: 0.2, height: 0.22, color: 'rgba(53,230,196,0.24)', border: '#35e6c4' },
+    { id: 'right', x: 0.86, y: 0.82, width: 0.2, height: 0.22, color: 'rgba(243,160,255,0.24)', border: '#f3a0ff' }
+  ],
   balls: [
-    { id: 1, x: 0.25, y: 0.3, radius: 26, color: '#35e6c4' },
-    { id: 2, x: 0.48, y: 0.65, radius: 20, color: '#75f28f' },
-    { id: 3, x: 0.72, y: 0.4, radius: 24, color: '#f3a0ff' }
+    { id: 1, x: 0.25, y: 0.3, radius: 26, color: '#35e6c4', homeX: 0.25, homeY: 0.3 },
+    { id: 2, x: 0.48, y: 0.65, radius: 20, color: '#75f28f', homeX: 0.48, homeY: 0.65 },
+    { id: 3, x: 0.72, y: 0.4, radius: 24, color: '#f3a0ff', homeX: 0.72, homeY: 0.4 }
   ]
 };
 
@@ -36,6 +43,64 @@ function toCanvas(point) {
 
 function distance(a, b) {
   return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+
+function updateScore() {
+  scoreElement.textContent = `Очки: ${state.score}`;
+}
+
+function resetScene() {
+  state.activeBallId = null;
+  state.score = 0;
+  for (const ball of state.balls) {
+    ball.x = ball.homeX;
+    ball.y = ball.homeY;
+  }
+  updateScore();
+  if (state.isRunning) {
+    setStatus('Сцена сброшена: снова захватывайте шары и переносите в зоны');
+  } else {
+    setStatus('Нажмите «Включить камеру»');
+  }
+}
+
+function drawZones() {
+  for (const zone of state.zones) {
+    const width = zone.width * canvasElement.width;
+    const height = zone.height * canvasElement.height;
+    const x = zone.x * canvasElement.width - width / 2;
+    const y = zone.y * canvasElement.height - height / 2;
+
+    canvasCtx.fillStyle = zone.color;
+    canvasCtx.fillRect(x, y, width, height);
+    canvasCtx.lineWidth = 2;
+    canvasCtx.strokeStyle = zone.border;
+    canvasCtx.strokeRect(x, y, width, height);
+  }
+}
+
+function tryScoreBall(ball) {
+  const ballX = ball.x * canvasElement.width;
+  const ballY = ball.y * canvasElement.height;
+
+  for (const zone of state.zones) {
+    const width = zone.width * canvasElement.width;
+    const height = zone.height * canvasElement.height;
+    const x = zone.x * canvasElement.width - width / 2;
+    const y = zone.y * canvasElement.height - height / 2;
+
+    if (ballX > x && ballX < x + width && ballY > y && ballY < y + height) {
+      state.score += 1;
+      updateScore();
+      ball.x = ball.homeX;
+      ball.y = ball.homeY;
+      setStatus('Попадание! +1 очко. Захватите следующий шар.');
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function drawBalls() {
@@ -81,8 +146,11 @@ function updateInteraction() {
   }
 
   if (state.activeBallId !== null && state.pinchDistance > PINCH_RELEASE_THRESHOLD) {
+    const releasedBall = state.balls.find((item) => item.id === state.activeBallId);
     state.activeBallId = null;
-    setStatus('Отпущено: сведите пальцы снова для захвата');
+    if (!releasedBall || !tryScoreBall(releasedBall)) {
+      setStatus('Отпущено: сведите пальцы снова для захвата');
+    }
   }
 
   if (state.activeBallId !== null) {
@@ -116,6 +184,7 @@ function renderFrame(results) {
   canvasElement.height = videoElement.videoHeight;
 
   canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+  drawZones();
   drawBalls();
 
   if (results.multiHandLandmarks?.length) {
@@ -247,3 +316,6 @@ startButton.addEventListener('click', () => {
     startExperience();
   }
 });
+
+resetButton.addEventListener('click', resetScene);
+updateScore();
