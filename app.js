@@ -3,25 +3,35 @@ const canvasElement = document.getElementById('output');
 const canvasCtx = canvasElement.getContext('2d');
 const statusElement = document.getElementById('status');
 const startButton = document.getElementById('startButton');
+const applySettingsButton = document.getElementById('applySettings');
+
+const countInput = document.getElementById('particleCount');
+const sizeInput = document.getElementById('particleSize');
+const colorInput = document.getElementById('particleColor');
+const speedInput = document.getElementById('particleSpeed');
 
 const state = {
   pinch: null,
   pinchDistance: Infinity,
-  activeBallId: null,
   stream: null,
   isRunning: false,
   hands: null,
   isProcessingFrame: false,
   isStarting: false,
-  balls: [
-    { id: 1, x: 0.25, y: 0.3, radius: 26, color: '#35e6c4' },
-    { id: 2, x: 0.48, y: 0.65, radius: 20, color: '#75f28f' },
-    { id: 3, x: 0.72, y: 0.4, radius: 24, color: '#f3a0ff' }
-  ]
+  particles: [],
+  settings: {
+    count: 140,
+    size: 6,
+    color: '#35e6c4',
+    speed: 1.4
+  }
 };
 
-const PINCH_GRAB_THRESHOLD = 0.055;
-const PINCH_RELEASE_THRESHOLD = 0.085;
+const PINCH_PUSH_THRESHOLD = 0.06;
+const PUSH_RADIUS_FACTOR = 18;
+const PUSH_STRENGTH = 3.1;
+const MAX_SPEED = 7;
+const FRICTION = 0.992;
 
 function setStatus(text) {
   statusElement.textContent = text;
@@ -29,7 +39,7 @@ function setStatus(text) {
 
 function toCanvas(point) {
   return {
-    x: canvasElement.width - point.x * canvasElement.width,
+    x: point.x * canvasElement.width,
     y: point.y * canvasElement.height
   };
 }
@@ -38,70 +48,113 @@ function distance(a, b) {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
-function drawBalls() {
-  for (const ball of state.balls) {
-    const x = ball.x * canvasElement.width;
-    const y = ball.y * canvasElement.height;
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
 
+function createParticle(radius, color, speed) {
+  const angle = Math.random() * Math.PI * 2;
+  const velocity = (0.35 + Math.random() * 0.65) * speed;
+
+  return {
+    x: Math.random() * canvasElement.width,
+    y: Math.random() * canvasElement.height,
+    vx: Math.cos(angle) * velocity,
+    vy: Math.sin(angle) * velocity,
+    radius,
+    color
+  };
+}
+
+function rebuildParticles() {
+  state.settings = {
+    count: clamp(Number(countInput.value) || 140, 20, 500),
+    size: clamp(Number(sizeInput.value) || 6, 2, 24),
+    color: colorInput.value || '#35e6c4',
+    speed: clamp(Number(speedInput.value) || 1.4, 0.3, 4)
+  };
+
+  countInput.value = String(state.settings.count);
+  sizeInput.value = String(state.settings.size);
+  speedInput.value = String(state.settings.speed);
+
+  state.particles = Array.from({ length: state.settings.count }, () =>
+    createParticle(state.settings.size, state.settings.color, state.settings.speed)
+  );
+
+  setStatus('Настройки применены. Сведите пальцы рядом с частицами, чтобы оттолкнуть их.');
+}
+
+function drawParticles() {
+  for (const particle of state.particles) {
     canvasCtx.beginPath();
-    canvasCtx.arc(x, y, ball.radius, 0, Math.PI * 2);
-    canvasCtx.fillStyle = ball.color;
+    canvasCtx.arc(particle.x, particle.y, particle.radius, 0, Math.PI * 2);
+    canvasCtx.fillStyle = particle.color;
     canvasCtx.fill();
-    canvasCtx.lineWidth = state.activeBallId === ball.id ? 4 : 2;
-    canvasCtx.strokeStyle = state.activeBallId === ball.id ? '#fff6b7' : 'rgba(255,255,255,0.4)';
-    canvasCtx.stroke();
   }
 }
 
-function updateInteraction() {
-  if (!state.pinch) {
-    state.activeBallId = null;
-    return;
+function advanceParticles() {
+  for (const particle of state.particles) {
+    particle.vx *= FRICTION;
+    particle.vy *= FRICTION;
+
+    particle.vx += (Math.random() - 0.5) * 0.08 * state.settings.speed;
+    particle.vy += (Math.random() - 0.5) * 0.08 * state.settings.speed;
+
+    particle.vx = clamp(particle.vx, -MAX_SPEED, MAX_SPEED);
+    particle.vy = clamp(particle.vy, -MAX_SPEED, MAX_SPEED);
+
+    particle.x += particle.vx;
+    particle.y += particle.vy;
+
+    if (particle.x < particle.radius) {
+      particle.x = particle.radius;
+      particle.vx = Math.abs(particle.vx);
+    } else if (particle.x > canvasElement.width - particle.radius) {
+      particle.x = canvasElement.width - particle.radius;
+      particle.vx = -Math.abs(particle.vx);
+    }
+
+    if (particle.y < particle.radius) {
+      particle.y = particle.radius;
+      particle.vy = Math.abs(particle.vy);
+    } else if (particle.y > canvasElement.height - particle.radius) {
+      particle.y = canvasElement.height - particle.radius;
+      particle.vy = -Math.abs(particle.vy);
+    }
   }
+}
+
+function pushParticles() {
+  if (!state.pinch || state.pinchDistance > PINCH_PUSH_THRESHOLD) return;
 
   const pinchCanvas = toCanvas(state.pinch);
+  const pushRadius = state.settings.size * PUSH_RADIUS_FACTOR;
 
-  if (state.activeBallId === null && state.pinchDistance < PINCH_GRAB_THRESHOLD) {
-    let candidate = null;
-    let minDistance = Infinity;
+  for (const particle of state.particles) {
+    const d = distance(pinchCanvas, particle);
+    if (d > pushRadius) continue;
 
-    for (const ball of state.balls) {
-      const ballPos = { x: ball.x * canvasElement.width, y: ball.y * canvasElement.height };
-      const d = distance(pinchCanvas, ballPos);
-      if (d < ball.radius * 1.7 && d < minDistance) {
-        candidate = ball;
-        minDistance = d;
-      }
-    }
+    const strength = (1 - d / pushRadius) * PUSH_STRENGTH * state.settings.speed;
+    const nx = (particle.x - pinchCanvas.x) / (d || 1);
+    const ny = (particle.y - pinchCanvas.y) / (d || 1);
 
-    if (candidate) {
-      state.activeBallId = candidate.id;
-      setStatus('Захват: шар двигается за рукой');
-    }
+    particle.vx += nx * strength;
+    particle.vy += ny * strength;
   }
 
-  if (state.activeBallId !== null && state.pinchDistance > PINCH_RELEASE_THRESHOLD) {
-    state.activeBallId = null;
-    setStatus('Отпущено: сведите пальцы снова для захвата');
-  }
-
-  if (state.activeBallId !== null) {
-    const ball = state.balls.find((item) => item.id === state.activeBallId);
-    if (ball) {
-      ball.x = Math.min(0.97, Math.max(0.03, 1 - state.pinch.x));
-      ball.y = Math.min(0.97, Math.max(0.03, state.pinch.y));
-    }
-  }
+  setStatus('Пинч активен: частицы отталкиваются от руки.');
 }
 
 function drawPinchCursor() {
   if (!state.pinch) return;
 
   const { x, y } = toCanvas(state.pinch);
-  const isPinched = state.pinchDistance < PINCH_GRAB_THRESHOLD;
+  const isPinched = state.pinchDistance < PINCH_PUSH_THRESHOLD;
 
   canvasCtx.beginPath();
-  canvasCtx.arc(x, y, isPinched ? 14 : 10, 0, Math.PI * 2);
+  canvasCtx.arc(x, y, isPinched ? 15 : 10, 0, Math.PI * 2);
   canvasCtx.fillStyle = isPinched ? '#ffd166' : '#ff9f43';
   canvasCtx.fill();
   canvasCtx.lineWidth = 2;
@@ -112,16 +165,17 @@ function drawPinchCursor() {
 function renderFrame(results) {
   if (!videoElement.videoWidth || !videoElement.videoHeight) return;
 
-  canvasElement.width = videoElement.videoWidth;
-  canvasElement.height = videoElement.videoHeight;
+  if (canvasElement.width !== videoElement.videoWidth || canvasElement.height !== videoElement.videoHeight) {
+    canvasElement.width = videoElement.videoWidth;
+    canvasElement.height = videoElement.videoHeight;
 
-  canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-  drawBalls();
+    if (state.particles.length === 0) {
+      rebuildParticles();
+    }
+  }
 
   if (results.multiHandLandmarks?.length) {
     const hand = results.multiHandLandmarks[0];
-    drawConnectors(canvasCtx, hand, HAND_CONNECTIONS, { color: '#7ac8ff', lineWidth: 3 });
-    drawLandmarks(canvasCtx, hand, { color: '#d0eeff', lineWidth: 1, radius: 2.5 });
 
     const thumbTip = hand[4];
     const indexTip = hand[8];
@@ -130,18 +184,28 @@ function renderFrame(results) {
       y: (thumbTip.y + indexTip.y) / 2
     };
     state.pinchDistance = distance(thumbTip, indexTip);
-    updateInteraction();
+
+    if (state.pinchDistance > PINCH_PUSH_THRESHOLD) {
+      setStatus('Сведите большой и указательный пальцы, чтобы толкать частицы.');
+    }
   } else {
     state.pinch = null;
-    state.activeBallId = null;
     setStatus('Рука не найдена — покажите ладонь в кадре');
   }
 
-  drawPinchCursor();
+  pushParticles();
+  advanceParticles();
 
-  if (state.pinch && state.activeBallId === null) {
-    setStatus('Сведите большой и указательный пальцы рядом с шаром');
+  canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+  drawParticles();
+
+  if (results.multiHandLandmarks?.length) {
+    const hand = results.multiHandLandmarks[0];
+    drawConnectors(canvasCtx, hand, HAND_CONNECTIONS, { color: '#7ac8ff', lineWidth: 3 });
+    drawLandmarks(canvasCtx, hand, { color: '#d0eeff', lineWidth: 1, radius: 2.5 });
   }
+
+  drawPinchCursor();
 }
 
 function nextFrame() {
@@ -232,7 +296,7 @@ async function startExperience() {
     state.isStarting = false;
     startButton.disabled = false;
     startButton.textContent = 'Камера включена';
-    setStatus('Камера запущена. Двигайте рукой для взаимодействия.');
+    setStatus('Камера запущена. Толкайте частицы пинч-жестом.');
     nextFrame();
   } catch (error) {
     console.error(error);
@@ -247,3 +311,6 @@ startButton.addEventListener('click', () => {
     startExperience();
   }
 });
+
+applySettingsButton.addEventListener('click', rebuildParticles);
+rebuildParticles();

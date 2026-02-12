@@ -11,14 +11,37 @@
       <header>
         <h1>Интерактив с отслеживанием рук</h1>
         <p>
-          Нажмите кнопку запуска, разрешите доступ к камере и сведите большой +
-          указательный пальцы, чтобы «схватить» ближайший шар.
+          Нажмите запуск, разрешите доступ к камере и подносите пальцы к частицам.
+          При «pinch» частицы отталкиваются и хаотично разлетаются по сцене.
         </p>
       </header>
 
       <div class="controls">
         <button id="startButton" type="button">Включить камеру</button>
       </div>
+
+      <section class="settings" aria-label="Настройки частиц">
+        <h2>Настройки частиц</h2>
+        <div class="settings-grid">
+          <label>
+            Количество
+            <input id="particleCount" type="number" min="20" max="500" step="10" value="140" />
+          </label>
+          <label>
+            Размер
+            <input id="particleSize" type="number" min="2" max="24" step="1" value="6" />
+          </label>
+          <label>
+            Цвет
+            <input id="particleColor" type="color" value="#35e6c4" />
+          </label>
+          <label>
+            Скорость
+            <input id="particleSpeed" type="range" min="0.3" max="4" step="0.1" value="1.4" />
+          </label>
+        </div>
+        <button id="applySettings" type="button">Применить настройки</button>
+      </section>
 
       <section class="stage-wrapper">
         <video id="webcam" autoplay playsinline muted></video>
@@ -27,8 +50,8 @@
       </section>
 
       <div class="legend">
-        <span><i class="dot dot-pinch"></i> Пинч курсор</span>
-        <span><i class="dot dot-ball"></i> Перетаскиваемые шары</span>
+        <span><i class="dot dot-pinch"></i> Пинч-курсор</span>
+        <span><i class="dot dot-particles"></i> Частицы</span>
       </div>
     </main>
 
